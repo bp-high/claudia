@@ -54,3 +54,33 @@
   returned `unknown` when the live JSONL clearly had the data. Worth periodically sanity
   checking claudia's own commands actually see data in whatever environment they're
   supposedly supported in, rather than trusting that passing tests means it works live.
+
+## 2026-11-17 — Remote MCP (mcp-remote) inside the container
+
+- **mcp-remote's OAuth callback is loopback-only.** 0.15.1 hard-codes
+  `app.listen(port, "127.0.0.1")` with no flag to change it, and a published
+  container port delivers to the container's interface, not its loopback — so
+  `-p <port>:<port>` alone never delivers the browser redirect. Fix: socat on
+  port+1 (all interfaces) → `127.0.0.1:<port>`, publish host `<port>` →
+  container `<port+1>`; the registered redirect URI is unchanged.
+- **Verified the relay is required, not just theoretically.** Podman 6.2 on
+  macOS (libkrun VM, rootless, netavark + pasta): a server bound to
+  `127.0.0.1` in the container answers inside (HTTP 200) but the published
+  port gives the host an empty reply (curl exit 52). Through the socat relay
+  the same path works, and a full `mcp-login` sign-in completed.
+- **Token cache is portable between host and container.** File is
+  `$MCP_REMOTE_CONFIG_DIR/mcp-remote-v1/<md5>_tokens.json`, md5 over the server
+  URL (+ `--resource`, headers, authorize params, client-metadata URL, token
+  endpoint if given). Same args → same file; changing any of those forces a new
+  sign-in.
+- **Keycloak advertises the device grant realm-wide but enables it per
+  client.** `device_authorization_endpoint` in the realm metadata proves
+  nothing; POST `client_id=<id>` to it — `unauthorized_client` means
+  `--device-code` won't work for that client.
+- **`mcp-remote-client` quits on stdin EOF.** It treats stdin `end` like
+  SIGINT: shuts down with exit 0 right after connecting, before the tools list
+  arrives. Run it with a TTY (`-it`) or with stdin held open, or a "passing"
+  smoke test proves only that it connected.
+- **The callback server starts lazily** (only when a sign-in is needed), and
+  `waitForAuthCode` has no timeout; `--auth-timeout` (30 s) only bounds the
+  long-poll and the post-callback token exchange.
