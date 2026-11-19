@@ -84,3 +84,31 @@
 - **The callback server starts lazily** (only when a sign-in is needed), and
   `waitForAuthCode` has no timeout; `--auth-timeout` (30 s) only bounds the
   long-poll and the post-callback token exchange.
+
+## 2026-11-19 — PR #28 review follow-ups (mcp-login)
+
+- **`claude mcp add-json` exits 0 when it can't write.** With an unwritable
+  `$CLAUDE_CONFIG_DIR` it still prints "Added stdio MCP server ..." and exits
+  0, writing nothing. Check the config file afterwards (user scope:
+  `mcpServers` in `$CLAUDE_CONFIG_DIR/.claude.json`).
+- **mcp-remote 0.15.1 derives a missing callback port deterministically:**
+  `3335 + parseInt(md5(url|resource|params|headers|...)[0:4], 16) % 45816`,
+  no free-port search. Its parser also removes `--header`/`--header-file`
+  pairs before reading the URL and port, so those may precede the URL. Without
+  static client info it deletes a cached registration whose redirect URI
+  doesn't match, so the sign-in must use the exact port the runtime will.
+  `parseCommandLineArgs` is exported from the bundled chunk that `client.js`
+  imports, so mcp-login calls it instead of copying the hash.
+- **`mcp-remote-client` exits by itself** after listing tools and resources
+  ("Exiting OK..."). Its SIGINT and stdin-end handlers are installed only
+  after connecting, and both exit 0; before connecting, Ctrl-C kills it
+  (status 130).
+- **`timeout --foreground` is needed for Ctrl-C.** Without it, `timeout` moves
+  to its own process group, so a terminal Ctrl-C never reaches the client.
+- **`:Z` on a shared host folder is a trap on SELinux hosts.** It relabels the
+  folder privately for the newest container, cutting off any running
+  container that mounts it. Use `:z` for folders several containers share.
+- **Podman exit codes for a throwaway container:** 125 for runtime errors such
+  as a bad mount, 127 for a missing command, and 126 also for attach-phase
+  failures (a busy published port gave 126 on Podman 6.2 for macOS). A
+  `podman run --rm` start costs ~0.2 s on that machine.
