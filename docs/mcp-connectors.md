@@ -76,10 +76,16 @@ $EDITOR ~/xpal-auth/mcp/servers.json
 }
 ```
 
-The rules:
+The rules are mcp-remote's own:
 
-- The **first** mcp-remote argument is the server URL; the **second** is the
-  callback port. It's required here, because the sign-in has to publish it.
+- The **first** mcp-remote argument is the server URL. Only `--header` and
+  `--header-file` pairs may come before it.
+- The **second** argument is the callback port, if the entry gives one. If it
+  doesn't, `mcp-login` uses the port mcp-remote derives from the URL (worked
+  out by mcp-remote's own code), so Desktop entries without a port work as
+  they are. A pre-registered OAuth client usually fixes the port: keep the one
+  the provider gave you.
+- An `env` block applies to both the sign-in and Claude Code.
 - The name (`my-server`) is what you pass to `mcp-login.sh`, and what Claude
   Code will call the server.
 - Keep the file in the auth folder, not in a repo: OAuth client info can
@@ -113,17 +119,21 @@ What happens:
 3. The browser is redirected back into the container, and mcp-remote stores
    the tokens in `$XPAL_HOST_AUTH/mcp-remote`.
 4. It connects, lists the server's tools, and registers the server with Claude
-   Code.
+   Code, or updates the registration if the entry in `servers.json` changed.
 
-It ends with:
+It ends with one of:
 
 ```
-Added stdio MCP server my-server to user config
 Registered "my-server" with Claude Code (user scope).
+Updated "my-server" in Claude Code (user scope).
+"my-server" is already registered with Claude Code with this definition.
 ```
 
 If valid tokens already exist, no URL appears; it just connects. So
 `mcp-login.sh` doubles as a connection check.
+
+It waits up to 10 minutes for the browser sign-in; set `MCP_LOGIN_TIMEOUT`
+(seconds) to allow longer. Ctrl-C cancels without registering anything.
 
 ## 3. Enable it in Claude Code
 
@@ -132,11 +142,15 @@ If valid tokens already exist, no URL appears; it just connects. So
 project and survives rebuilds. Check it without opening a session:
 
 ```bash
-podman run --rm --userns=keep-id \
-  -v ~/xpal-src:/xpal-src:Z -v ~/xpal-data:/xpal-data:Z -v ~/xpal-auth:/xpal-auth:Z \
-  xpal-claudia claude mcp list
+podman exec xpal-dev claude mcp list     # if the day-to-day container is running
+# otherwise, a throwaway container with just the auth folder:
+podman run --rm --userns=keep-id -v ~/xpal-auth:/xpal-auth:z xpal-claudia claude mcp list
 # my-server: mcp-remote https://mcp.example.com/mcp 3334 ... - ✔ Connected
 ```
+
+Mount the auth folder with `:z` (shared label), not `:Z`. On SELinux hosts,
+`:Z` relabels it privately for the new container and cuts a running
+day-to-day container off from its credentials.
 
 Other ways to manage it, all inside the container:
 
@@ -144,7 +158,7 @@ Other ways to manage it, all inside the container:
 |---|---|
 | Turn it off for now, keep config | `/mcp` in a Claude session → select the server → disable |
 | Register by hand (no sign-in run) | `claude mcp add-json --scope user my-server '{"type":"stdio","command":"mcp-remote","args":[...]}'` |
-| Re-register after editing `servers.json` | `claude mcp remove --scope user my-server`, then `./mcp-login.sh my-server` |
+| Apply an edit to `servers.json` | `./mcp-login.sh my-server`: it replaces the registration when the entry changed |
 | Remove it | `claude mcp remove --scope user my-server`; optionally delete its tokens in `$XPAL_HOST_AUTH/mcp-remote/` |
 
 ## 4. Run it
@@ -182,8 +196,10 @@ access token silently.
   callback port is whatever its OAuth client was registered with. Sign in to
   them one at a time.
 - **Port clash.** `mcp-login.sh` refuses to start if the callback port is busy
-  on the host — usually another mcp-remote (for example Claude Desktop's)
-  partway through its own sign-in. Finish or quit that one first.
+  on the host (on `127.0.0.1` or `::1`) — usually another mcp-remote (for
+  example Claude Desktop's) partway through its own sign-in. Finish or quit
+  that one first. If something grabs the port just after that check, Podman
+  fails with `address already in use`; the cause is the same.
 - **Upgrading mcp-remote.** Bump `MCP_REMOTE_VERSION` in the Containerfile and
   run `./build.sh` (or edit the version in an npx entry).
 

@@ -142,7 +142,8 @@ and survive rebuilds.
 **1. Describe the server** in `$XPAL_HOST_AUTH/mcp/servers.json`. It uses the
 same `{"mcpServers": {...}}` shape as a Claude Desktop config, so an entry can
 be pasted across unchanged — a host path to `npx` and any host `PATH` override
-are normalized away. See `mcp-servers.example.json` for the shape. The file stays on the host, outside git: it can carry OAuth client
+are normalized away, and an entry without a callback port uses the one
+mcp-remote derives from its URL. See `mcp-servers.example.json` for the shape. The file stays on the host, outside git: it can carry OAuth client
 details.
 
 ```bash
@@ -159,9 +160,8 @@ How the entry is written decides where mcp-remote comes from:
 `npx` ships with Node.js, so it is always available — nothing to install.
 Pin the version (`mcp-remote@0.15.1`, not bare `mcp-remote`); `mcp-login` warns
 if you don't. If every entry uses npx, set `MCP_REMOTE_VERSION` empty in the
-Containerfile to drop the preinstall. Switching an already-registered server
-between forms: `claude mcp remove --scope user <name>`, then re-run
-`./mcp-login.sh <name>`.
+Containerfile to drop the preinstall. After editing an entry (switching forms
+included), re-run `./mcp-login.sh <name>`: it replaces the registration.
 
 **2. Sign in once** (if the image predates this section, `./build.sh` first):
 
@@ -176,7 +176,8 @@ browser on the host and sign in. The OAuth server redirects the browser to
 container. The tokens are written to `$XPAL_HOST_AUTH/mcp-remote`, the
 connection is tested (the server's tools are listed), and the server is
 registered with Claude Code at user scope (stored in `$CLAUDE_CONFIG_DIR`, so
-it persists too).
+it persists too), or its registration is updated if the entry changed. The
+sign-in gives up after 10 minutes (`MCP_LOGIN_TIMEOUT=<seconds>` to change).
 
 **3. Use it.** In the day-to-day container, start `claude`; `/mcp` lists the
 server. Claude Code launches `mcp-remote` itself, which reads the shared tokens

@@ -46,11 +46,22 @@ Running the proxy in the container is easy. Signing in is not:
    `<callback-port + 1>`, where `socat` relays to `127.0.0.1:<callback-port>`.
    The redirect URI is unchanged from a desktop install. The in-image helper
    (`mcp-login`) parses the definition, runs `mcp-remote-client` with the same
-   args (same token-cache key), and registers the server with Claude Code at
-   user scope (`claude mcp add-json --scope user`).
+   args and env (same token-cache key), and registers the server with Claude
+   Code at user scope (`claude mcp add-json --scope user`), replacing the
+   registration when the entry changed and checking the config file
+   afterwards (`add-json` exits 0 even when it can't write).
+   The callback port is the entry's second argument or, when there is none,
+   the port mcp-remote derives from the URL, computed by calling mcp-remote's
+   own argument parser rather than a copy of its hash. That is also why the
+   host asks the image for the port (one extra container start, ~0.2 s)
+   instead of parsing `servers.json` itself: only the image has mcp-remote,
+   and the host has no guaranteed JSON parser.
 4. **No callback port on the day-to-day container.** It only consumes tokens:
    Claude Code launches mcp-remote, which refreshes tokens without a callback.
    When a refresh token finally expires, re-run `mcp-login.sh`.
+5. **Shared SELinux label (`:z`) on the auth mount** in the sign-in and run
+   scripts. A private label (`:Z`) on a throwaway sign-in container would cut
+   a running day-to-day container off from its credentials.
 
 ## Consequences
 
@@ -60,6 +71,9 @@ Running the proxy in the container is easy. Signing in is not:
 - Tokens are portable: the cache filename is an md5 of the server URL (plus
   resource/headers/params when given), so host and container installs with the
   same args share one cache key.
+- Deriving a missing port relies on mcp-remote's package layout (`client.js`
+  importing `parseCommandLineArgs` from a chunk). If that changes, mcp-login
+  asks for an explicit port instead of guessing.
 - The relay depends on mcp-remote's loopback-only bind. If a future
   mcp-remote adds a bind-address option, the relay can be dropped. The pin
   keeps this from changing unnoticed.

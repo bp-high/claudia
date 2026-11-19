@@ -113,8 +113,23 @@ and must reach mcp-remote inside a container:
 
 ### `Port <N> is already in use` from `mcp-login.sh`
 
-Something on the host holds the callback port — usually Claude Desktop's own
-mcp-remote in the middle of a sign-in. Finish or quit it, then retry.
+Something on the host holds the callback port, on `127.0.0.1` or `::1` —
+usually Claude Desktop's own mcp-remote in the middle of a sign-in. Finish or
+quit it, then retry. Podman's `bind: address already in use` during a sign-in
+has the same cause.
+
+### `mcp-login: gave up after 600s waiting for "<name>"`
+
+The browser sign-in wasn't completed in time. Run `mcp-login.sh` again and
+open the new URL; `MCP_LOGIN_TIMEOUT=<seconds> ./mcp-login.sh <name>` allows
+longer.
+
+### `registering "<name>" with Claude Code failed: ... does not hold the new definition`
+
+`claude mcp add-json` reports success even when it can't write its config, so
+`mcp-login` checks the file afterwards. Make sure `$XPAL_HOST_AUTH/claude` is
+writable by the container user (the UID match described in
+[container-env.md](container-env.md)).
 
 ### Remote MCP server shows as failed in `/mcp` after working for a while
 
